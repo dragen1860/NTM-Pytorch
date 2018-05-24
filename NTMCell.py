@@ -10,37 +10,39 @@ from    memory import NTMMemory
 class NTMCell(nn.Module):
 
 	def __init__(self, input_sz, output_sz, ctrlr_sz, ctrlr_layers, num_heads, N, M):
-		"""Initialize an EncapsulatedNTM.
+		"""
+		This is a wrapper which can be used as LSTMCell().
 
-		:param input_sz: External number of inputs.
-		:param output_sz: External number of outputs.
-		:param ctrlr_sz: The size of the internal representation.
-		:param ctrlr_layers: Controller number of layers.
-		:param num_heads: Number of heads.
-		:param N: Number of rows in the memory bank.
-		:param M: Number of cols/features in the memory bank.
+		:param input_sz:
+		:param output_sz:
+		:param ctrlr_sz:
+		:param ctrlr_layers:
+		:param num_heads:
+		:param N:
+		:param M:
 		"""
 		super(NTMCell, self).__init__()
 
-		self.input_sz = input_sz
-		self.output_sz = output_sz
-		self.ctrlr_sz = ctrlr_sz
-		self.ctrlr_layers = ctrlr_layers
-		self.num_heads = num_heads
-		self.N = N
-		self.M = M
+		self.input_sz = input_sz        # input sequence vector size, not sequences length
+		self.output_sz = output_sz      # output sequence vector size, not sequences length
+		self.ctrlr_sz = ctrlr_sz        # rnn cell hidden size
+		self.ctrlr_layers = ctrlr_layers # rnn cell hidden layers number
+		self.num_heads = num_heads      # number of headers of write&read head
+		self.N = N                      # memory rows
+		self.M = M                      # memory columns
 
-		# Create the NTM components
+
 		memory = NTMMemory(N, M)
-		controller = LSTMCtrlr(input_sz + M * num_heads, ctrlr_sz, ctrlr_layers)
+		# the input of controller is formed by concatenating x and read vectors.
+		ctrlr = LSTMCtrlr(input_sz + M * num_heads, ctrlr_sz, ctrlr_layers)
 		heads = nn.ModuleList([])
 		for i in range(num_heads):
-			heads += [
+			heads.extend([
 				NTMReadHead(memory, ctrlr_sz),
 				NTMWriteHead(memory, ctrlr_sz)
-			]
+			])
 
-		self.ntm = NTM(input_sz, output_sz, controller, memory, heads)
+		self.ntm = NTM(input_sz, output_sz, ctrlr, memory, heads)
 		self.memory = memory
 
 	def init_sequence(self, batchsz):

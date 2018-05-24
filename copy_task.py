@@ -41,11 +41,6 @@ def DataLoader(num_batches, batchsz, seq_sz, min_len, max_len):
 		yield batch_idx + 1, input, output
 
 
-def clip_grads(net):
-	"""gradient clipping to the range [10, 10]."""
-	parameters = list(filter(lambda p: p.grad is not None, net.parameters()))
-	for p in parameters:
-		p.grad.data.clamp_(-10, 10)
 
 
 
@@ -65,10 +60,9 @@ def train():
 
 	db = DataLoader(num_batches, batchsz, seq_sz, seq_min_len, seq_max_len)
 	cell = NTMCell(seq_sz + 1, seq_sz, ctrlr_sz, ctrlr_layers, num_heads, memory_N, memory_M)
+	print(cell)
 	criteon = nn.BCELoss()
 	optimizer = optim.RMSprop(cell.parameters(), momentum=0.9, alpha=0.95, lr=1e-4)
-
-
 
 	losses = []
 	costs = []
@@ -89,12 +83,13 @@ def train():
 		# read the output (no input given)
 		pred = torch.zeros(y.size())
 		for i in range(outp_seq_len):
-			pred[i], _ = cell()
+			pred[i], _ = cell(None)
 
+		# pred: [seq_len, b, seq_sz]
 		loss = criteon(pred, y)
 		optimizer.zero_grad()
 		loss.backward()
-		clip_grads(cell)
+		nn.utils.clip_grad_norm_(cell.parameters(), 10)
 		optimizer.step()
 
 		pred_binarized = pred.clone().data
