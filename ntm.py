@@ -1,15 +1,16 @@
-#coding=utf-8
-import torch
-from torch import nn
-from torch.autograd import Variable
-import torch.nn.functional as F
+import  torch
+from    torch import nn
+import  torch.nn.functional as F
 
 
 class NTM(nn.Module):
-	"""A Neural Turing Machine."""
+	"""
+	A Neural Turing Machine.
+	"""
 
-	def __init__(self, num_inputs, num_outputs, controller, memory, heads):
-		"""Initialize the NTM.
+	def __init__(self, input_sz, output_sz, ctrlr, memory, heads):
+		"""
+		Initialize the NTM.
 
 		:param num_inputs: External input size.
 		:param num_outputs: External output size.
@@ -23,22 +24,22 @@ class NTM(nn.Module):
 		"""
 		super(NTM, self).__init__()
 
-		# Save arguments
-		self.num_inputs = num_inputs
-		self.num_outputs = num_outputs
-		self.controller = controller
+
+		self.input_sz = input_sz
+		self.output_sz = output_sz
+		self.ctrlr = ctrlr
 		self.memory = memory
 		self.heads = heads
 
 		self.N, self.M = memory.size()
-		_, self.controller_size = controller.size()
+		_, self.output_sz = ctrlr.size()
 
 		# Initialize the initial previous read values to random biases
 		self.num_read_heads = 0
 		self.init_r = []
 		for head in heads:
 			if head.is_read_head():
-				init_r_bias = Variable(torch.randn(1, self.M) * 0.01)
+				init_r_bias = torch.randn(1, self.M) * 0.01
 				self.register_buffer("read{}_bias".format(self.num_read_heads), init_r_bias.data)
 				self.init_r += [init_r_bias]
 				self.num_read_heads += 1
@@ -47,23 +48,25 @@ class NTM(nn.Module):
 
 		# Initialize a fully connected layer to produce the actual output:
 		#   [controller_output; previous_reads ] -> output
-		self.fc = nn.Linear(self.controller_size + self.num_read_heads * self.M, num_outputs)
+		self.fc = nn.Linear(self.output_sz + self.num_read_heads * self.M, output_sz)
 		self.reset_parameters()
 
-	def create_new_state(self, batch_size):
-		init_r = [r.clone().repeat(batch_size, 1) for r in self.init_r]
-		controller_state = self.controller.create_new_state(batch_size)
-		heads_state = [head.create_new_state(batch_size) for head in self.heads]
+	def create_new_state(self, batchsz):
 
-		return init_r, controller_state, heads_state
+		init_r = [r.clone().repeat(batchsz, 1) for r in self.init_r]
+		ctrlr_state = self.ctrlr.create_new_state(batchsz)
+		heads_state = [head.create_new_state(batchsz) for head in self.heads]
+
+		return init_r, ctrlr_state, heads_state
 
 	def reset_parameters(self):
 		# Initialize the linear layer
-		nn.init.xavier_uniform(self.fc.weight, gain=1)
-		nn.init.normal(self.fc.bias, std=0.01)
+		nn.init.xavier_uniform_(self.fc.weight, gain=1)
+		nn.init.normal_(self.fc.bias, std=0.01)
 
 	def forward(self, x, prev_state):
-		"""NTM forward function.
+		"""
+		NTM forward function.
 
 		:param x: input vector (batch_size x num_inputs)
 		:param prev_state: The previous state of the NTM
@@ -73,7 +76,7 @@ class NTM(nn.Module):
 
 		# Use the controller to get an embeddings
 		inp = torch.cat([x] + prev_reads, dim=1)
-		controller_outp, controller_state = self.controller(inp, prev_controller_state)
+		controller_outp, controller_state = self.ctrlr(inp, prev_controller_state)
 
 		# Read/Write from the list of heads
 		reads = []

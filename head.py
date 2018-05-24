@@ -1,9 +1,7 @@
-#coding=utf-8
-import torch
-from torch import nn
-from torch.autograd import Variable
-import torch.nn.functional as F
-import numpy as np
+import  torch
+from    torch import nn
+import  torch.nn.functional as F
+import  numpy as np
 
 
 def _split_cols(mat, lengths):
@@ -17,10 +15,13 @@ def _split_cols(mat, lengths):
 
 
 class NTMHeadBase(nn.Module):
-	"""An NTM Read/Write Head."""
+	"""
+	An NTM Read/Write Head Basic Class.
+	"""
 
-	def __init__(self, memory, controller_size):
-		"""Initilize the read/write head.
+	def __init__(self, memory, ctrlrsz):
+		"""
+		Initilize the read/write head.
 
 		:param memory: The :class:`NTMMemory` to be addressed by the head.
 		:param controller_size: The size of the internal representation.
@@ -29,9 +30,9 @@ class NTMHeadBase(nn.Module):
 
 		self.memory = memory
 		self.N, self.M = memory.size()
-		self.controller_size = controller_size
+		self.ctrlrsz = ctrlrsz
 
-	def create_new_state(self, batch_size):
+	def create_new_state(self, batchsz):
 		raise NotImplementedError
 
 	def register_parameters(self):
@@ -54,76 +55,83 @@ class NTMHeadBase(nn.Module):
 
 
 class NTMReadHead(NTMHeadBase):
-	def __init__(self, memory, controller_size):
-		super(NTMReadHead, self).__init__(memory, controller_size)
+
+	def __init__(self, memory, ctrlrsz):
+		super(NTMReadHead, self).__init__(memory, ctrlrsz)
 
 		# Corresponding to k, β, g, s, γ sizes from the paper
-		self.read_lengths = [self.M, 1, 1, 3, 1]
-		self.fc_read = nn.Linear(controller_size, sum(self.read_lengths))
+		# k is of size of M, and s unit of size 3
+		self.read_len = [self.M, 1, 1, 3, 1]
+		self.fc_read = nn.Linear(ctrlrsz, sum(self.read_len))
 		self.reset_parameters()
 
-	def create_new_state(self, batch_size):
+	def create_new_state(self, batchsz):
 		# The state holds the previous time step address weightings
-		return Variable(torch.zeros(batch_size, self.N))
+		return torch.zeros(batchsz, self.N)
 
 	def reset_parameters(self):
 		# Initialize the linear layers
-		nn.init.xavier_uniform(self.fc_read.weight, gain=1.4)
-		nn.init.normal(self.fc_read.bias, std=0.01)
+		nn.init.xavier_uniform_(self.fc_read.weight, gain=1.4)
+		nn.init.normal_(self.fc_read.bias, std=0.01)
 
 	def is_read_head(self):
 		return True
 
 	def forward(self, embeddings, w_prev):
-		"""NTMReadHead forward function.
+		"""
+		NTMReadHead forward function.
 
 		:param embeddings: input representation of the controller.
 		:param w_prev: previous step state
 		"""
 		o = self.fc_read(embeddings)
-		k, beta, g, s, gamma = _split_cols(o, self.read_lengths)
+		k, beta, g, s, gamma = _split_cols(o, self.read_len)
 
-		# Read from memory
+		# obtain address w
 		w = self._address_memory(k, beta, g, s, gamma, w_prev)
+		# read
 		r = self.memory.read(w)
 
 		return r, w
 
 
 class NTMWriteHead(NTMHeadBase):
-	def __init__(self, memory, controller_size):
-		super(NTMWriteHead, self).__init__(memory, controller_size)
+
+	def __init__(self, memory, ctrlrsz):
+		super(NTMWriteHead, self).__init__(memory, ctrlrsz)
 
 		# Corresponding to k, β, g, s, γ, e, a sizes from the paper
-		self.write_lengths = [self.M, 1, 1, 3, 1, self.M, self.M]
-		self.fc_write = nn.Linear(controller_size, sum(self.write_lengths))
+		self.write_len = [self.M, 1, 1, 3, 1, self.M, self.M]
+		self.fc_write = nn.Linear(ctrlrsz, sum(self.write_len))
 		self.reset_parameters()
 
 	def create_new_state(self, batch_size):
-		return Variable(torch.zeros(batch_size, self.N))
+		return torch.zeros(batch_size, self.N)
 
 	def reset_parameters(self):
 		# Initialize the linear layers
-		nn.init.xavier_uniform(self.fc_write.weight, gain=1.4)
-		nn.init.normal(self.fc_write.bias, std=0.01)
+		nn.init.xavier_uniform_(self.fc_write.weight, gain=1.4)
+		nn.init.normal_(self.fc_write.bias, std=0.01)
 
 	def is_read_head(self):
 		return False
 
 	def forward(self, embeddings, w_prev):
-		"""NTMWriteHead forward function.
+		"""
+		NTMWriteHead forward function.
 
 		:param embeddings: input representation of the controller.
 		:param w_prev: previous step state
 		"""
 		o = self.fc_write(embeddings)
-		k, beta, g, s, gamma, e, a = _split_cols(o, self.write_lengths)
+		k, beta, g, s, gamma, e, a = _split_cols(o, self.write_len)
 
 		# e should be in [0, 1]
 		e = F.sigmoid(e)
 
-		# Write to memory
+		# retain address w
 		w = self._address_memory(k, beta, g, s, gamma, w_prev)
+		# write into memory
 		self.memory.write(w, e, a)
 
 		return w

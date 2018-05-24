@@ -1,9 +1,7 @@
-#coding=utf-8
-import torch
-from torch.autograd import Variable
-import torch.nn.functional as F
-from torch import nn
-import numpy as np
+import  torch
+import  torch.nn.functional as F
+from    torch import nn
+import  numpy as np
 
 
 def _convolve(w, s):
@@ -15,12 +13,14 @@ def _convolve(w, s):
 
 
 class NTMMemory(nn.Module):
-	"""Memory bank for NTM."""
+	"""
+	Memory bank for NTM.
+	"""
 
 	def __init__(self, N, M):
 		"""Initialize the NTM Memory matrix.
 
-		The memory's dimensions are (batch_size x N x M).
+		The memory's dimensions are (batch size x N x M).
 		Each batch has it's own memory matrix.
 
 		:param N: Number of rows in the memory.
@@ -33,42 +33,50 @@ class NTMMemory(nn.Module):
 
 		# The memory bias allows the heads to learn how to initially address
 		# memory locations by content
-		self.register_buffer('mem_bias', Variable(torch.Tensor(N, M)))
+		self.register_buffer('mem_bias', torch.Tensor(N, M))
 
 		# Initialize memory bias
 		stdev = 1 / (np.sqrt(N + M))
-		nn.init.uniform(self.mem_bias, -stdev, stdev)
+		nn.init.uniform_(self.mem_bias, -stdev, stdev)
 
-	def reset(self, batch_size):
-		"""Initialize memory from bias, for start-of-sequence."""
-		self.batch_size = batch_size
-		self.memory = self.mem_bias.clone().repeat(batch_size, 1, 1)
+	def reset(self, batchsz):
+		"""
+		Initialize memory from bias, for start-of-sequence.
+		"""
+		self.batchsz = batchsz
+		# [b, N, M]
+		self.memory = self.mem_bias.clone().repeat(batchsz, 1, 1)
 
 	def size(self):
 		return self.N, self.M
 
 	def read(self, w):
-		"""Read from memory (according to section 3.1)."""
+		"""
+		Read from memory (according to section 3.1).
+		"""
 		return torch.matmul(w.unsqueeze(1), self.memory).squeeze(1)
 
 	def write(self, w, e, a):
-		"""write to memory (according to section 3.2)."""
+		"""
+		write to memory (according to section 3.2).
+		"""
 		self.prev_mem = self.memory
-		self.memory = Variable(torch.Tensor(self.batch_size, self.N, self.M))
+		self.memory = torch.Tensor(self.batchsz, self.N, self.M)
 		erase = torch.matmul(w.unsqueeze(-1), e.unsqueeze(1))
 		add = torch.matmul(w.unsqueeze(-1), a.unsqueeze(1))
 		self.memory = self.prev_mem * (1 - erase) + add
 
 	def address(self, k, beta, g, s, gamma, w_prev):
-		"""NTM Addressing (according to section 3.3).
+		"""
+		NTM Addressing (according to section 3.3).
 
 		Returns a softmax weighting over the rows of the memory matrix.
 
 		:param k: The key vector.
-		:param β: The key strength (focus).
+		:param beta: The key strength (focus).
 		:param g: Scalar interpolation gate (with previous weighting).
 		:param s: Shift weighting.
-		:param γ: Sharpen weighting scalar.
+		:param gamma: Sharpen weighting scalar.
 		:param w_prev: The weighting produced in the previous time step.
 		"""
 		# Content focus
@@ -82,7 +90,7 @@ class NTMMemory(nn.Module):
 		return w
 
 	def _similarity(self, k, beta):
-		k = k.view(self.batch_size, 1, -1)
+		k = k.view(self.batchsz, 1, -1)
 		w = F.softmax(beta * F.cosine_similarity(self.memory + 1e-16, k + 1e-16, dim=-1), dim=1)
 		return w
 
@@ -90,8 +98,8 @@ class NTMMemory(nn.Module):
 		return g * wc + (1 - g) * w_prev
 
 	def _shift(self, wg, s):
-		result = Variable(torch.zeros(wg.size()))
-		for b in range(self.batch_size):
+		result = torch.zeros(wg.size())
+		for b in range(self.batchsz):
 			result[b] = _convolve(wg[b], s[b])
 		return result
 

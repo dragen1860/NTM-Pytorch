@@ -1,10 +1,10 @@
-import argparse, random
-import torch
-from torch import nn
-from torch.autograd import Variable
-from torch import optim
-import numpy as np
-from aio import EncapsulatedNTM
+import  argparse, random
+import  torch
+from    torch import nn
+from    torch.autograd import Variable
+from    torch import optim
+import  numpy as np
+from    NTMCell import NTMCell
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123, help="seed value for rngs")
@@ -82,7 +82,7 @@ def train():
 	rmsprop_momentum = 0.9
 	rmsprop_alpha = 0.95
 
-	net = EncapsulatedNTM(sequence_width + 1, sequence_width,
+	net = NTMCell(sequence_width + 1, sequence_width,
 	                           controller_size, controller_layers,
 	                           num_heads, memory_n, memory_m)
 
@@ -130,7 +130,7 @@ def train():
 		# the cost is the number of error bits per sequence
 		cost = torch.sum(torch.abs(y_out_binarized - y.data))
 
-		loss, cost =  loss.data[0], cost / batch_size
+		loss, cost =  loss.item(), cost / batch_size
 
 		losses += [loss]
 		costs += [cost]
