@@ -1,7 +1,6 @@
 import  random
 import  torch
 from    torch import nn
-from    torch.autograd import Variable
 from    torch import optim
 import  numpy as np
 from    NTMCell import NTMCell
