@@ -74,7 +74,7 @@ def train():
 		outp_seq_len, batchsz, _ = y.size()
 
 		# new sequence
-		cell.init_sequence(batchsz)
+		cell.zero_state(batchsz)
 
 		# feed the sequence + delimiter
 		for i in range(inp_seq_len):

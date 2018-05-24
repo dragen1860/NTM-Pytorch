@@ -8,11 +8,11 @@ class NTM(nn.Module):
 	A Neural Turing Machine.
 	"""
 
-	def __init__(self, input_sz, output_sz, ctrlr, memory, heads):
+	def __init__(self, input_sz, output_sz, ctrlr, N, M, heads):
 		"""
 		Initialize the NTM.
 
-		:param input_sz:
+		:param input_sz:   9
 		:param output_sz:  8
 		:param ctrlr: :class:`LSTMCtrlr`
 		:param memory: :class:`NTMMemory`
@@ -27,11 +27,10 @@ class NTM(nn.Module):
 		self.input_sz = input_sz
 		self.output_sz = output_sz
 		self.ctrlr = ctrlr
-		self.memory = memory
 		self.heads = heads
 
 		# 128    20
-		self.N, self.M = memory.size()
+		self.N, self.M = N, M
 		# controller output size:128 is distinct from NTM output sz:8
 		# 29,    128
 		_, self.ctrlr_output_sz = ctrlr.size()
@@ -57,9 +56,9 @@ class NTM(nn.Module):
 		# [1, M] => [b, M]
 		init_r = [r.clone().repeat(batchsz, 1) for r in self.init_r]
 		ctrlr_state = self.ctrlr.new_state(batchsz)
-		heads_state = [head.new_state(batchsz) for head in self.heads]
+		w_list = [head.new_w(batchsz) for head in self.heads]
 
-		return init_r, ctrlr_state, heads_state
+		return init_r, ctrlr_state, w_list
 
 	def reset_parameters(self):
 		nn.init.xavier_uniform_(self.o2o.weight, gain=1)
@@ -73,30 +72,29 @@ class NTM(nn.Module):
 		:param prev_state: The previous state of the NTM
 		"""
 		# Unpack the previous state
-		prev_reads, prev_ctrlr_state, prev_heads_states = prev_state
+		prev_r_list, prev_ctrlr_state, prev_w_list = prev_state
 
 		# concat x with read vector to fed into controller
-		inp = torch.cat([x] + prev_reads, dim=1)
+		# [b, 9] concat [b, 20] on dim=1 => [b, 29]
+		inp = torch.cat([x] + prev_r_list, dim=1)
+		# [b, 29] + ([3, b, 128], [3, b,128]) => [b, 128] + ([3, b, 128], [3, b,128])
 		ctrlr_outp, ctrlr_state = self.ctrlr(inp, prev_ctrlr_state)
 
 		# Read/Write from the list of heads
-		reads = []
-		heads_states = []
-		for head, prev_head_state in zip(self.heads, prev_heads_states):
+		r_list = []
+		w_list = []
+		for head, prev_w in zip(self.heads, prev_w_list):
 			if head.is_read_head():
-				r, head_state = head(ctrlr_outp, prev_head_state)
-				reads.append(r)
+				r, w = head(ctrlr_outp, prev_w)
+				r_list.append(r)
 			else:
-				head_state = head(ctrlr_outp, prev_head_state)
-			heads_states.append(head_state)
+				w = head(ctrlr_outp, prev_w)
+			w_list.append(w)
 
 		# concat output of controller and current read vector to yield output of NTM
 		# ctrlr_outp: [b, 128]
 		# reads[0]:   [b, 20]
-		inp2 = torch.cat([ctrlr_outp] + reads, dim=1)
+		inp2 = torch.cat([ctrlr_outp] + r_list, dim=1)
 		o = F.sigmoid(self.o2o(inp2))
 
-		# Pack the current state
-		state = (reads, ctrlr_state, heads_states)
-
-		return o, state
+		return o, (r_list, ctrlr_state, w_list)

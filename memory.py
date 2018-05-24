@@ -18,7 +18,8 @@ class NTMMemory(nn.Module):
 	"""
 
 	def __init__(self, N, M):
-		"""Initialize the NTM Memory matrix.
+		"""
+		Initialize the NTM Memory matrix.
 
 		The memory's dimensions are (batch size x N x M).
 		Each batch has it's own memory matrix.

@@ -32,7 +32,7 @@ class NTMHeadBase(nn.Module):
 		self.N, self.M = memory.size()
 		self.ctrlrsz = ctrlrsz
 
-	def new_state(self, batchsz):
+	def new_w(self, batchsz):
 		raise NotImplementedError
 
 	def register_parameters(self):
@@ -65,7 +65,7 @@ class NTMReadHead(NTMHeadBase):
 		self.fc_read = nn.Linear(ctrlrsz, sum(self.read_len))
 		self.reset_parameters()
 
-	def new_state(self, batchsz):
+	def new_w(self, batchsz):
 		# The state holds the previous time step address weightings
 		return torch.zeros(batchsz, self.N)
 
@@ -105,7 +105,7 @@ class NTMWriteHead(NTMHeadBase):
 		self.fc_write = nn.Linear(ctrlrsz, sum(self.write_len))
 		self.reset_parameters()
 
-	def new_state(self, batch_size):
+	def new_w(self, batch_size):
 		return torch.zeros(batch_size, self.N)
 
 	def reset_parameters(self):

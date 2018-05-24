@@ -11,9 +11,9 @@ class LSTMCtrlr(nn.Module):
 	def __init__(self, input_sz, output_sz, num_layer):
 		"""
 
-		:param input_sz:
-		:param output_sz:
-		:param num_layer:
+		:param input_sz: input of controller, distinct from NTM, it is concatenated between x and read vector, say 9+20
+		:param output_sz: output of controller, say 128
+		:param num_layer: 3
 		"""
 		super(LSTMCtrlr, self).__init__()
 

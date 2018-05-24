@@ -13,28 +13,29 @@ class NTMCell(nn.Module):
 		"""
 		This is a wrapper which can be used as LSTMCell().
 
-		:param input_sz:
-		:param output_sz:
-		:param ctrlr_sz:
-		:param ctrlr_layers:
-		:param num_heads:
-		:param N:
-		:param M:
+		:param input_sz:  input of NTM, 9, with end delimiter
+		:param output_sz: outpt of NTM, 8, without end delimiter
+		:param ctrlr_sz:  hidden units of controller, 128
+		:param ctrlr_layers:    layers of hidden of controller, 3
+		:param num_heads: heads number, 1 = 1 read and 1 write head
+		:param N: memory rows, 128
+		:param M: memory columns, 20
 		"""
 		super(NTMCell, self).__init__()
 
-		self.input_sz = input_sz        # input sequence vector size, not sequences length
-		self.output_sz = output_sz      # output sequence vector size, not sequences length
-		self.ctrlr_sz = ctrlr_sz        # rnn cell hidden size
-		self.ctrlr_layers = ctrlr_layers # rnn cell hidden layers number
-		self.num_heads = num_heads      # number of headers of write&read head
-		self.N = N                      # memory rows
-		self.M = M                      # memory columns
-
+		self.input_sz = input_sz
+		self.output_sz = output_sz
+		self.ctrlr_sz = ctrlr_sz
+		self.ctrlr_layers = ctrlr_layers
+		self.num_heads = num_heads
+		self.N = N
+		self.M = M
 
 		memory = NTMMemory(N, M)
 		# the input of controller is formed by concatenating x and read vectors.
 		ctrlr = LSTMCtrlr(input_sz + M * num_heads, ctrlr_sz, ctrlr_layers)
+
+		# the module added into nn.ModuleList will be included automatically as part of current module.
 		heads = nn.ModuleList([])
 		for i in range(num_heads):
 			heads.extend([
@@ -42,23 +43,33 @@ class NTMCell(nn.Module):
 				NTMWriteHead(memory, ctrlr_sz)
 			])
 
-		self.ntm = NTM(input_sz, output_sz, ctrlr, memory, heads)
+		self.ntm = NTM(input_sz, output_sz, ctrlr, N, M, heads)
 		self.memory = memory
 
-	def init_sequence(self, batchsz):
+	def zero_state(self, batchsz):
 		"""
 		Initializing the state.
 		"""
 		self.batchsz = batchsz
 		self.memory.reset(batchsz)
-		self.previous_state = self.ntm.new_state(batchsz)
+		self.prev_state = self.ntm.new_state(batchsz)
 
 	def forward(self, x=None):
-		if x is None:
+		"""
+
+		:param x: [b, 9]
+		:return:
+		"""
+		if x is None: # no input
+			# [b, 9]
 			x = torch.zeros(self.batchsz, self.input_sz)
 
-		o, self.previous_state = self.ntm(x, self.previous_state)
-		return o, self.previous_state
+		# x: [b, 9]
+		# o: [b, 8]
+		# state: (init_r, ctrlr_state, heads_state)
+		o, self.prev_state = self.ntm(x, self.prev_state)
+
+		return o, self.prev_state
 
 	def calculate_num_params(self):
 		"""
