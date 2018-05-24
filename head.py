@@ -14,60 +14,30 @@ def _split_cols(mat, lengths):
 	return results
 
 
-class NTMHeadBase(nn.Module):
-	"""
-	An NTM Read/Write Head Basic Class.
-	"""
 
-	def __init__(self, memory, ctrlrsz):
+
+class NTMReadHead(nn.Module):
+
+	def __init__(self, memory, ctrlr_sz):
 		"""
-		Initilize the read/write head.
 
-		:param memory: The :class:`NTMMemory` to be addressed by the head.
-		:param controller_size: The size of the internal representation.
+		:param memory:
+		:param ctrlr_sz:
 		"""
-		super(NTMHeadBase, self).__init__()
-
+		super(NTMReadHead, self).__init__()
 		self.memory = memory
 		self.N, self.M = memory.size()
-		self.ctrlrsz = ctrlrsz
+		self.ctrlr_sz = ctrlr_sz
 
-	def new_w(self, batchsz):
-		raise NotImplementedError
-
-	def register_parameters(self):
-		raise NotImplementedError
-
-	def is_read_head(self):
-		return NotImplementedError
-
-	def _address_memory(self, k, beta, g, s, gamma, w_prev):
-		# Handle Activations
-		k = k.clone()
-		beta = F.softplus(beta)
-		g = F.sigmoid(g)
-		s = F.softmax(s, dim=1)
-		gamma = 1 + F.softplus(gamma)
-
-		w = self.memory.address(k, beta, g, s, gamma, w_prev)
-
-		return w
-
-
-class NTMReadHead(NTMHeadBase):
-
-	def __init__(self, memory, ctrlrsz):
-		super(NTMReadHead, self).__init__(memory, ctrlrsz)
-
-		# Corresponding to k, β, g, s, γ sizes from the paper
+		# Corresponding to k, beta, g, s, gamma sizes from the paper
 		# k is of size of M, and s unit of size 3
 		self.read_len = [self.M, 1, 1, 3, 1]
-		self.fc_read = nn.Linear(ctrlrsz, sum(self.read_len))
+		self.fc_read = nn.Linear(ctrlr_sz, sum(self.read_len))
 		self.reset_parameters()
 
 	def new_w(self, batchsz):
 		# The state holds the previous time step address weightings
-		return torch.zeros(batchsz, self.N)
+		return torch.zeros(batchsz, self.N).to('cuda')
 
 	def reset_parameters(self):
 		# Initialize the linear layers
@@ -77,36 +47,47 @@ class NTMReadHead(NTMHeadBase):
 	def is_read_head(self):
 		return True
 
-	def forward(self, embeddings, w_prev):
+	def forward(self, h, w_prev):
 		"""
 		NTMReadHead forward function.
 
-		:param embeddings: input representation of the controller.
+		:param h: controller hidden variable
 		:param w_prev: previous step state
 		"""
-		o = self.fc_read(embeddings)
+		o = self.fc_read(h)
 		k, beta, g, s, gamma = _split_cols(o, self.read_len)
 
 		# obtain address w
-		w = self._address_memory(k, beta, g, s, gamma, w_prev)
+		w = self.memory.address(k, beta, g, s, gamma, w_prev)
 		# read
 		r = self.memory.read(w)
 
 		return r, w
 
 
-class NTMWriteHead(NTMHeadBase):
+
+
+class NTMWriteHead(nn.Module):
 
 	def __init__(self, memory, ctrlrsz):
-		super(NTMWriteHead, self).__init__(memory, ctrlrsz)
+		"""
 
-		# Corresponding to k, β, g, s, γ, e, a sizes from the paper
+		:param memory:
+		:param ctrlrsz:
+		"""
+		super(NTMWriteHead, self).__init__()
+
+		self.memory = memory
+		self.N, self.M = memory.size()
+		self.ctrlrsz = ctrlrsz
+
+		# Corresponding to k, beta, g, s, gamma, e, a sizes from the paper
 		self.write_len = [self.M, 1, 1, 3, 1, self.M, self.M]
 		self.fc_write = nn.Linear(ctrlrsz, sum(self.write_len))
 		self.reset_parameters()
 
 	def new_w(self, batch_size):
-		return torch.zeros(batch_size, self.N)
+		return torch.zeros(batch_size, self.N).to('cuda')
 
 	def reset_parameters(self):
 		# Initialize the linear layers
@@ -116,22 +97,24 @@ class NTMWriteHead(NTMHeadBase):
 	def is_read_head(self):
 		return False
 
-	def forward(self, embeddings, w_prev):
+	def forward(self, h, w_prev):
 		"""
 		NTMWriteHead forward function.
 
-		:param embeddings: input representation of the controller.
+		:param h: controller hidden variable
 		:param w_prev: previous step state
 		"""
-		o = self.fc_write(embeddings)
+		o = self.fc_write(h)
 		k, beta, g, s, gamma, e, a = _split_cols(o, self.write_len)
 
 		# e should be in [0, 1]
 		e = F.sigmoid(e)
 
 		# retain address w
-		w = self._address_memory(k, beta, g, s, gamma, w_prev)
+		w = self.memory.address(k, beta, g, s, gamma, w_prev)
 		# write into memory
 		self.memory.write(w, e, a)
 
 		return w
+
+

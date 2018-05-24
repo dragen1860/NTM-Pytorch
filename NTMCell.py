@@ -13,7 +13,7 @@ class NTMCell(nn.Module):
 		This is a wrapper which can be used as LSTMCell().
 
 		:param input_sz:  input of NTM, 9, with end delimiter
-		:param output_sz: outpt of NTM, 8, without end delimiter
+		:param output_sz: output of NTM, 8, without end delimiter
 		:param ctrlr_sz:  hidden units of controller, 128
 		:param ctrlr_layers:    layers of hidden of controller, 3
 		:param num_heads: heads number, 1 = 1 read and 1 write head
@@ -30,6 +30,7 @@ class NTMCell(nn.Module):
 		self.N = N
 		self.M = M
 
+		# initialize a memory buffer, used by Read/Write Heads.
 		memory = NTMMemory(N, M)
 
 		# the module added into nn.ModuleList will be included automatically as part of current module.
@@ -40,12 +41,12 @@ class NTMCell(nn.Module):
 				NTMWriteHead(memory, ctrlr_sz)
 			])
 
-		self.ctrlr = Ctrlr(input_sz, output_sz, N, M, heads, ctrlr_sz, ctrlr_layers)
+		self.ctrlr = Ctrlr(input_sz, output_sz, N, M, ctrlr_sz, ctrlr_layers, heads)
 		self.memory = memory
 
 	def zero_state(self, batchsz):
 		"""
-		Initializing the state.
+		Initialize the state.
 		"""
 		self.batchsz = batchsz
 		self.memory.reset(batchsz)
@@ -59,7 +60,7 @@ class NTMCell(nn.Module):
 		"""
 		if x is None: # no input
 			# [b, 9]
-			x = torch.zeros(self.batchsz, self.input_sz)
+			x = torch.zeros(self.batchsz, self.input_sz).to('cuda')
 
 		# x: [b, 9]
 		# o: [b, 8]

@@ -57,11 +57,12 @@ def train():
 	num_batches = 50000
 	batchsz = 2
 
+	device = torch.device('cuda')
 
 	db = DataLoader(num_batches, batchsz, seq_sz, seq_min_len, seq_max_len)
-	cell = NTMCell(seq_sz + 1, seq_sz, ctrlr_sz, ctrlr_layers, num_heads, memory_N, memory_M)
+	cell = NTMCell(seq_sz + 1, seq_sz, ctrlr_sz, ctrlr_layers, num_heads, memory_N, memory_M).to(device)
 	print(cell)
-	criteon = nn.BCELoss()
+	criteon = nn.BCELoss().to(device)
 	optimizer = optim.RMSprop(cell.parameters(), momentum=0.9, alpha=0.95, lr=1e-4)
 
 	losses = []
@@ -69,6 +70,8 @@ def train():
 	seq_lengths = []
 
 	for epoch, x, y in db:
+		x = x.to(device)
+		y = y.to(device)
 		# train
 		inp_seq_len = x.size(0)
 		outp_seq_len, batchsz, _ = y.size()
@@ -81,7 +84,7 @@ def train():
 			cell(x[i])
 
 		# read the output (no input given)
-		pred = torch.zeros(y.size())
+		pred = torch.zeros(y.size()).to('cuda')
 		for i in range(outp_seq_len):
 			pred[i], _ = cell(None)
 
@@ -92,11 +95,11 @@ def train():
 		nn.utils.clip_grad_norm_(cell.parameters(), 10)
 		optimizer.step()
 
-		pred_binarized = pred.clone().data
+		pred_binarized = pred.clone().cpu().detach()
 		pred_binarized.apply_(lambda x: 0 if x < 0.5 else 1)
 
 		# the cost is the number of error bits per sequence
-		cost = torch.sum(torch.abs(pred_binarized - y.data))
+		cost = torch.sum(torch.abs(pred_binarized - y.cpu()))
 
 		# convert to numpy data
 		loss, cost =  loss.item(), cost.item() / batchsz

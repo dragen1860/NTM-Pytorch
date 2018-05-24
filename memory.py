@@ -73,17 +73,24 @@ class NTMMemory(nn.Module):
 
 		Returns a softmax weighting over the rows of the memory matrix.
 
-		:param k: The key vector.
-		:param beta: The key strength (focus).
-		:param g: Scalar interpolation gate (with previous weighting).
-		:param s: Shift weighting.
-		:param gamma: Sharpen weighting scalar.
-		:param w_prev: The weighting produced in the previous time step.
+		:param k:
+		:param beta:
+		:param g:
+		:param s:
+		:param gamma:
+		:param w_prev:
 		"""
-		# Content focus
+		# activation for each
+		k = k.clone()
+		beta = F.softplus(beta)
+		g = F.sigmoid(g)
+		s = F.softmax(s, dim=1)
+		gamma = 1 + F.softplus(gamma)
+
+		# Content addressing
 		wc = self._similarity(k, beta)
 
-		# Location focus
+		# Location addressing
 		wg = self._interpolate(w_prev, wc, g)
 		w_wave = self._shift(wg, s)
 		w = self._sharpen(w_wave, gamma)
@@ -99,7 +106,7 @@ class NTMMemory(nn.Module):
 		return g * wc + (1 - g) * w_prev
 
 	def _shift(self, wg, s):
-		result = torch.zeros(wg.size())
+		result = torch.zeros(wg.size()).to('cuda')
 		for b in range(self.batchsz):
 			result[b] = _convolve(wg[b], s[b])
 		return result
@@ -108,3 +115,6 @@ class NTMMemory(nn.Module):
 		w = w_wave ** gamma
 		w = torch.div(w, torch.sum(w, dim=1).view(-1, 1) + 1e-16)
 		return w
+
+	def __repr__(self):
+		return 'NTMMemory(N:%d, M:%d, mem_bias:(%d,%d, required_grad=False))'%(self.N, self.M, self.N, self.M)
