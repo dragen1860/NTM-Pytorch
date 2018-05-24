@@ -45,8 +45,8 @@ def DataLoader(num_batches, batchsz, seq_sz, min_len, max_len):
 
 
 def train():
-	ctrlr_sz = 100
-	ctrlr_layers = 1
+	ctrlr_sz = 128
+	ctrlr_layers = 3
 	num_heads = 1
 	seq_sz = 8
 	seq_min_len = 1
@@ -55,7 +55,7 @@ def train():
 	memory_M = 20
 
 	num_batches = 50000
-	batchsz = 1
+	batchsz = 2
 
 
 	db = DataLoader(num_batches, batchsz, seq_sz, seq_min_len, seq_max_len)

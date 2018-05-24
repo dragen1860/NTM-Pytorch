@@ -12,9 +12,9 @@ class NTM(nn.Module):
 		"""
 		Initialize the NTM.
 
-		:param num_inputs: External input size.
-		:param num_outputs: External output size.
-		:param controller: :class:`LSTMController`
+		:param input_sz:
+		:param output_sz:  8
+		:param ctrlr: :class:`LSTMCtrlr`
 		:param memory: :class:`NTMMemory`
 		:param heads: list of :class:`NTMReadHead` or :class:`NTMWriteHead`
 
@@ -24,15 +24,17 @@ class NTM(nn.Module):
 		"""
 		super(NTM, self).__init__()
 
-
 		self.input_sz = input_sz
 		self.output_sz = output_sz
 		self.ctrlr = ctrlr
 		self.memory = memory
 		self.heads = heads
 
+		# 128    20
 		self.N, self.M = memory.size()
-		_, self.output_sz = ctrlr.size()
+		# controller output size:128 is distinct from NTM output sz:8
+		# 29,    128
+		_, self.ctrlr_output_sz = ctrlr.size()
 
 		# Initialize the initial previous read values to random biases
 		self.num_read_heads = 0
@@ -40,29 +42,28 @@ class NTM(nn.Module):
 		for head in heads:
 			if head.is_read_head():
 				init_r_bias = torch.randn(1, self.M) * 0.01
-				self.register_buffer("read{}_bias".format(self.num_read_heads), init_r_bias.data)
-				self.init_r += [init_r_bias]
+				self.register_buffer("read{}_bias".format(self.num_read_heads), init_r_bias)
+				self.init_r.append(init_r_bias)
 				self.num_read_heads += 1
+		assert self.num_read_heads > 0
 
-		assert self.num_read_heads > 0, "heads list must contain at least a single read head"
 
-		# Initialize a fully connected layer to produce the actual output:
-		#   [controller_output; previous_reads ] -> output
-		self.fc = nn.Linear(self.output_sz + self.num_read_heads * self.M, output_sz)
+		# output of controller to output of NTM
+		# [128 + heads*20] => [8]
+		self.o2o = nn.Linear(self.ctrlr_output_sz + self.num_read_heads * self.M, output_sz)
 		self.reset_parameters()
 
-	def create_new_state(self, batchsz):
-
+	def new_state(self, batchsz):
+		# [1, M] => [b, M]
 		init_r = [r.clone().repeat(batchsz, 1) for r in self.init_r]
-		ctrlr_state = self.ctrlr.create_new_state(batchsz)
-		heads_state = [head.create_new_state(batchsz) for head in self.heads]
+		ctrlr_state = self.ctrlr.new_state(batchsz)
+		heads_state = [head.new_state(batchsz) for head in self.heads]
 
 		return init_r, ctrlr_state, heads_state
 
 	def reset_parameters(self):
-		# Initialize the linear layer
-		nn.init.xavier_uniform_(self.fc.weight, gain=1)
-		nn.init.normal_(self.fc.bias, std=0.01)
+		nn.init.xavier_uniform_(self.o2o.weight, gain=1)
+		nn.init.normal_(self.o2o.bias, std=0.01)
 
 	def forward(self, x, prev_state):
 		"""
@@ -72,28 +73,30 @@ class NTM(nn.Module):
 		:param prev_state: The previous state of the NTM
 		"""
 		# Unpack the previous state
-		prev_reads, prev_controller_state, prev_heads_states = prev_state
+		prev_reads, prev_ctrlr_state, prev_heads_states = prev_state
 
-		# Use the controller to get an embeddings
+		# concat x with read vector to fed into controller
 		inp = torch.cat([x] + prev_reads, dim=1)
-		controller_outp, controller_state = self.ctrlr(inp, prev_controller_state)
+		ctrlr_outp, ctrlr_state = self.ctrlr(inp, prev_ctrlr_state)
 
 		# Read/Write from the list of heads
 		reads = []
 		heads_states = []
 		for head, prev_head_state in zip(self.heads, prev_heads_states):
 			if head.is_read_head():
-				r, head_state = head(controller_outp, prev_head_state)
-				reads += [r]
+				r, head_state = head(ctrlr_outp, prev_head_state)
+				reads.append(r)
 			else:
-				head_state = head(controller_outp, prev_head_state)
-			heads_states += [head_state]
+				head_state = head(ctrlr_outp, prev_head_state)
+			heads_states.append(head_state)
 
-		# Generate Output
-		inp2 = torch.cat([controller_outp] + reads, dim=1)
-		o = F.sigmoid(self.fc(inp2))
+		# concat output of controller and current read vector to yield output of NTM
+		# ctrlr_outp: [b, 128]
+		# reads[0]:   [b, 20]
+		inp2 = torch.cat([ctrlr_outp] + reads, dim=1)
+		o = F.sigmoid(self.o2o(inp2))
 
 		# Pack the current state
-		state = (reads, controller_state, heads_states)
+		state = (reads, ctrlr_state, heads_states)
 
 		return o, state

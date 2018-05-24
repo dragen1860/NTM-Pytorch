@@ -51,7 +51,7 @@ class NTMCell(nn.Module):
 		"""
 		self.batchsz = batchsz
 		self.memory.reset(batchsz)
-		self.previous_state = self.ntm.create_new_state(batchsz)
+		self.previous_state = self.ntm.new_state(batchsz)
 
 	def forward(self, x=None):
 		if x is None:
