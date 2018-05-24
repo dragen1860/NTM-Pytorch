@@ -1,8 +1,7 @@
 import  torch
 from    torch import nn
 
-from    ntm import NTM
-from    ctrlr import LSTMCtrlr
+from    ctrlr import Ctrlr
 from    head import NTMReadHead, NTMWriteHead
 from    memory import NTMMemory
 
@@ -32,8 +31,6 @@ class NTMCell(nn.Module):
 		self.M = M
 
 		memory = NTMMemory(N, M)
-		# the input of controller is formed by concatenating x and read vectors.
-		ctrlr = LSTMCtrlr(input_sz + M * num_heads, ctrlr_sz, ctrlr_layers)
 
 		# the module added into nn.ModuleList will be included automatically as part of current module.
 		heads = nn.ModuleList([])
@@ -43,7 +40,7 @@ class NTMCell(nn.Module):
 				NTMWriteHead(memory, ctrlr_sz)
 			])
 
-		self.ntm = NTM(input_sz, output_sz, ctrlr, N, M, heads)
+		self.ctrlr = Ctrlr(input_sz, output_sz, N, M, heads, ctrlr_sz, ctrlr_layers)
 		self.memory = memory
 
 	def zero_state(self, batchsz):
@@ -52,7 +49,7 @@ class NTMCell(nn.Module):
 		"""
 		self.batchsz = batchsz
 		self.memory.reset(batchsz)
-		self.prev_state = self.ntm.new_state(batchsz)
+		self.prev_state = self.ctrlr.new_state(batchsz)
 
 	def forward(self, x=None):
 		"""
@@ -67,7 +64,7 @@ class NTMCell(nn.Module):
 		# x: [b, 9]
 		# o: [b, 8]
 		# state: (init_r, ctrlr_state, heads_state)
-		o, self.prev_state = self.ntm(x, self.prev_state)
+		o, self.prev_state = self.ctrlr(x, self.prev_state)
 
 		return o, self.prev_state
 
