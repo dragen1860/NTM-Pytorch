@@ -1,4 +1,4 @@
-import  argparse, random
+import  random
 import  torch
 from    torch import nn
 from    torch.autograd import Variable
@@ -6,30 +6,12 @@ from    torch import optim
 import  numpy as np
 from    NTMCell import NTMCell
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--seed', type=int, default=123, help="seed value for rngs")
-parser.add_argument('--task', default='copy',
-                    help="choose the task to train (default: copy)")
-parser.add_argument('-p', '--param', action='append', default=[],
-                    help='override model  example: "-pbatch_size=4 -pnum_heads=2"')
-parser.add_argument('--checkpoint-interval', type=int, default='1000',
-                    help="checkpoint interval (default: {1000}). "
-                         "use 0 to disable checkpointing")
-parser.add_argument('--checkpoint-path', action='store', default='./',
-                    help="path for saving checkpoint data (default: './')")
-parser.add_argument('--report-interval', type=int, default=100,
-                    help="reporting interval")
-
-args = parser.parse_args()
-args.checkpoint_path = args.checkpoint_path.rstrip('/')
 
 
 
-
-
-# Generator of randomized test sequences
-def DataLoader(num_batches, batch_size, seq_width, min_len, max_len):
-	"""Generator of random sequences for the copy task.
+def DataLoader(num_batches, batchsz, seq_sz, min_len, max_len):
+	"""
+	Generator of random sequences for the copy task.
 
 	Creates random batches of "bits" sequences.
 
@@ -37,27 +19,27 @@ def DataLoader(num_batches, batch_size, seq_width, min_len, max_len):
 	The length is [`min_len`, `max_len`]
 
 	:param num_batches: Total number of batches to generate.
-	:param seq_width: The width of each item in the sequence.
-	:param batch_size: Batch size.
+	:param seq_sz: squence dimension=[seq_len, seq_sz].
+	:param batchsz: Batch size.
 	:param min_len: Sequence minimum length.
 	:param max_len: Sequence maximum length.
 
-	NOTE: The input width is `seq_width + 1`, the additional input
-	contain the delimiter.
+	NOTE: The input size is `seq_sz + 1`, the additional input contains the delimiter.
 	"""
-	for batch_num in range(num_batches):
+	for batch_idx in range(num_batches):
 		# All batches have the same sequence length
 		seq_len = random.randint(min_len, max_len)
-		seq = np.random.binomial(1, 0.5, (seq_len, batch_size, seq_width))
-		seq = Variable(torch.from_numpy(seq))
+
+		seq = np.random.binomial(1, 0.5, (seq_len, batchsz, seq_sz))
+		seq = torch.tensor(seq).float()
 
 		# The input includes an additional channel used for the delimiter
-		inp = Variable(torch.zeros(seq_len + 1, batch_size, seq_width + 1))
-		inp[:seq_len, :, :seq_width] = seq
-		inp[seq_len, :, seq_width] = 1.0  # delimiter in our control channel
-		outp = seq.clone()
+		input = torch.zeros(seq_len + 1, batchsz, seq_sz + 1)
+		input[:seq_len, :, :seq_sz] = seq
+		input[seq_len, :, seq_sz] = 1.0  # delimiter in our control channel
+		output = seq.clone()
 
-		yield batch_num + 1, inp.float(), outp.float()
+		yield batch_idx + 1, input, output
 
 
 def clip_grads(net):
@@ -66,34 +48,26 @@ def clip_grads(net):
 	for p in parameters:
 		p.grad.data.clamp_(-10, 10)
 
+
+
 def train():
-	name = "copy-task"
-	controller_size = 100
-	controller_layers = 1
+	ctrlr_sz = 100
+	ctrlr_layers = 1
 	num_heads = 1
-	sequence_width = 8
-	sequence_min_len = 1
-	sequence_max_len = 20
-	memory_n = 128
-	memory_m = 20
+	seq_sz = 8
+	seq_min_len = 1
+	seq_max_len = 20
+	memory_N = 128
+	memory_M = 20
+
 	num_batches = 50000
-	batch_size = 1
-	rmsprop_lr = 1e-4
-	rmsprop_momentum = 0.9
-	rmsprop_alpha = 0.95
+	batchsz = 1
 
-	net = NTMCell(sequence_width + 1, sequence_width,
-	                           controller_size, controller_layers,
-	                           num_heads, memory_n, memory_m)
 
-	db = DataLoader(num_batches, batch_size, sequence_width, sequence_min_len, sequence_max_len)
-
+	db = DataLoader(num_batches, batchsz, seq_sz, seq_min_len, seq_max_len)
+	cell = NTMCell(seq_sz + 1, seq_sz, ctrlr_sz, ctrlr_layers, num_heads, memory_N, memory_M)
 	criteon = nn.BCELoss()
-
-	optimizer = optim.RMSprop(net.parameters(),
-	                               momentum=rmsprop_momentum,
-	                               alpha=rmsprop_alpha,
-	                               lr=rmsprop_lr)
+	optimizer = optim.RMSprop(cell.parameters(), momentum=0.9, alpha=0.95, lr=1e-4)
 
 
 
@@ -101,49 +75,50 @@ def train():
 	costs = []
 	seq_lengths = []
 
-	for batch_num, x, y in db:
+	for epoch, x, y in db:
 		# train
-		optimizer.zero_grad()
 		inp_seq_len = x.size(0)
-		outp_seq_len, batch_size, _ = y.size()
+		outp_seq_len, batchsz, _ = y.size()
 
 		# new sequence
-		net.init_sequence(batch_size)
+		cell.init_sequence(batchsz)
 
 		# feed the sequence + delimiter
 		for i in range(inp_seq_len):
-			net(x[i])
+			cell(x[i])
 
 		# read the output (no input given)
-		y_out = Variable(torch.zeros(y.size()))
+		pred = torch.zeros(y.size())
 		for i in range(outp_seq_len):
-			y_out[i], _ = net()
+			pred[i], _ = cell()
 
-		loss = criteon(y_out, y)
+		loss = criteon(pred, y)
+		optimizer.zero_grad()
 		loss.backward()
-		clip_grads(net)
+		clip_grads(cell)
 		optimizer.step()
 
-		y_out_binarized = y_out.clone().data
-		y_out_binarized.apply_(lambda x: 0 if x < 0.5 else 1)
+		pred_binarized = pred.clone().data
+		pred_binarized.apply_(lambda x: 0 if x < 0.5 else 1)
 
 		# the cost is the number of error bits per sequence
-		cost = torch.sum(torch.abs(y_out_binarized - y.data))
+		cost = torch.sum(torch.abs(pred_binarized - y.data))
 
-		loss, cost =  loss.item(), cost / batch_size
+		# convert to numpy data
+		loss, cost =  loss.item(), cost.item() / batchsz
 
 		losses += [loss]
 		costs += [cost]
-		seq_lengths += [y.size(0)]
+		seq_lengths += [outp_seq_len]
 
 
 
 		# report
-		if batch_num % args.report_interval == 0:
-			mean_loss = np.array(losses[-args.report_interval:]).mean()
-			mean_cost = np.array(costs[-args.report_interval:]).mean()
+		if epoch % 100 == 0:
+			mean_loss = np.array(losses[-100:]).mean()
+			mean_cost = np.array(costs[-100:]).mean()
 
-			print("batch %d loss: %.6f cost: %.2f"%(batch_num, mean_loss, mean_cost))
+			print("epoch %d loss: %.6f cost: %.2f"%(epoch, mean_loss, mean_cost))
 
 
 if __name__ == '__main__':
