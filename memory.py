@@ -4,12 +4,7 @@ from    torch import nn
 import  numpy as np
 
 
-def _convolve(w, s):
-	"""Circular convolution implementation."""
-	assert s.size(0) == 3
-	t = torch.cat([w[-1:], w, w[:1]])
-	c = F.conv1d(t.view(1, 1, -1), s.view(1, 1, -1)).view(-1)
-	return c
+
 
 
 class NTMMemory(nn.Module):
@@ -82,7 +77,7 @@ class NTMMemory(nn.Module):
 		"""
 		# activation for each
 		k = k.clone()
-		beta = F.softplus(beta)
+		beta = F.softplus(beta) # softplus is sort of activation function analogous to ReLU
 		g = F.sigmoid(g)
 		s = F.softmax(s, dim=1)
 		gamma = 1 + F.softplus(gamma)
@@ -97,6 +92,15 @@ class NTMMemory(nn.Module):
 
 		return w
 
+	def _convolve(self, w, s):
+		"""
+		Circular convolution implementation.
+		"""
+		assert s.size(0) == 3  # w: [128], s[3]
+		t = torch.cat([w[-1:], w, w[:1]])  # [128+2]
+		c = F.conv1d(t.view(1, 1, -1), s.view(1, 1, -1)).view(-1)  # [128]
+		return c
+
 	def _similarity(self, k, beta):
 		k = k.view(self.batchsz, 1, -1)
 		w = F.softmax(beta * F.cosine_similarity(self.memory + 1e-16, k + 1e-16, dim=-1), dim=1)
@@ -108,7 +112,7 @@ class NTMMemory(nn.Module):
 	def _shift(self, wg, s):
 		result = torch.zeros(wg.size()).to('cuda')
 		for b in range(self.batchsz):
-			result[b] = _convolve(wg[b], s[b])
+			result[b] = self._convolve(wg[b], s[b])
 		return result
 
 	def _sharpen(self, w_wave, gamma):

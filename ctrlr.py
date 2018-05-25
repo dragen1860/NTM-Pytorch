@@ -42,6 +42,7 @@ class Ctrlr(nn.Module):
 				self.num_read_heads += 1
 		assert self.num_read_heads > 0
 
+		# input dimenson of controller is distinct from input of NTM
 		self.ctrlr_input_sz = input_sz + M * self.num_read_heads
 		self.lstm = nn.LSTM(input_size=self.ctrlr_input_sz, hidden_size=ctrlr_sz, num_layers=ctrlr_layers)
 

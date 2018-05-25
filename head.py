@@ -4,14 +4,20 @@ import  torch.nn.functional as F
 import  numpy as np
 
 
-def _split_cols(mat, lengths):
-	"""Split a 2D matrix to variable length columns."""
-	assert mat.size()[1] == sum(lengths), "Lengths must be summed to num columns"
-	l = np.cumsum([0] + lengths)
-	results = []
-	for s, e in zip(l[:-1], l[1:]):
-		results += [mat[:, s:e]]
-	return results
+# def _split_cols(mat, lengths):
+# 	"""
+# 	Split a 2D matrix to variable length columns. [1, 26], [20, 1, 1, 3, 1]
+# 	"""
+# 	assert mat.size()[1] == sum(lengths), "Lengths must be summed to num columns"
+#
+# 	l = np.cumsum([0] + lengths) # [0, 20, 21, 22, 25, 26]
+# 	results = []
+#
+# 	for s, e in zip(l[:-1], l[1:]):
+# 		results += [mat[:, s:e]]
+#
+# 	# [b, 20], [b, 1], [b, 1], [b, 3], [b, 1]
+# 	return results
 
 
 
@@ -55,7 +61,8 @@ class NTMReadHead(nn.Module):
 		:param w_prev: previous step state
 		"""
 		o = self.fc_read(h)
-		k, beta, g, s, gamma = _split_cols(o, self.read_len)
+		# [b, 26] split with [20, 1, 1, 3, 1]
+		k, beta, g, s, gamma = torch.split(o, self.read_len, dim=1)
 
 		# obtain address w
 		w = self.memory.address(k, beta, g, s, gamma, w_prev)
@@ -105,7 +112,8 @@ class NTMWriteHead(nn.Module):
 		:param w_prev: previous step state
 		"""
 		o = self.fc_write(h)
-		k, beta, g, s, gamma, e, a = _split_cols(o, self.write_len)
+		# [b, len] split with [20, 1, 1, 3, 1, 20, 20]
+		k, beta, g, s, gamma, e, a = torch.split(o, self.write_len, dim=1)
 
 		# e should be in [0, 1]
 		e = F.sigmoid(e)
