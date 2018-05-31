@@ -45,7 +45,8 @@ def DataLoader(num_batches, batchsz, seq_sz, min_len, max_len):
 
 
 def train():
-	ctrlr_sz = 100
+
+	ctrlr_sz = 128
 	ctrlr_layers = 1
 	num_heads = 1
 	seq_sz = 8
@@ -55,7 +56,7 @@ def train():
 	memory_M = 20
 
 	num_batches = 50000
-	batchsz = 1
+	batchsz = 10
 
 	device = torch.device('cuda')
 
@@ -64,6 +65,8 @@ def train():
 	print(cell)
 	criteon = nn.BCELoss().to(device)
 	optimizer = optim.RMSprop(cell.parameters(), momentum=0.9, alpha=0.95, lr=1e-4)
+	for p in cell.parameters():
+		print(p.size())
 
 	losses = []
 	costs = []
@@ -95,7 +98,8 @@ def train():
 		nn.utils.clip_grad_norm_(cell.parameters(), 10)
 		optimizer.step()
 
-		pred_binarized = pred.clone().cpu().detach()
+		# we just take use of its vallia data, so stop gradients here.
+		pred_binarized = pred.clone().detach().cpu()
 		pred_binarized.apply_(lambda x: 0 if x < 0.5 else 1)
 
 		# the cost is the number of error bits per sequence
@@ -116,6 +120,8 @@ def train():
 			mean_cost = np.array(costs[-100:]).mean()
 
 			print("epoch %d loss: %.6f cost: %.2f"%(epoch, mean_loss, mean_cost))
+			print(x[:,0,:].cpu().numpy()[:2])
+			print(pred_binarized[:,0,:].numpy()[:2])
 
 
 if __name__ == '__main__':

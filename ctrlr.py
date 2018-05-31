@@ -31,6 +31,7 @@ class Ctrlr(nn.Module):
 		self.N, self.M = N, M
 
 		# Initialize the initial previous read values to random biases
+		# It will NOT be optimized.
 		self.num_read_heads = 0
 		self.init_r = []
 		for head in heads:
@@ -44,11 +45,11 @@ class Ctrlr(nn.Module):
 
 		# input dimenson of controller is distinct from input of NTM
 		self.ctrlr_input_sz = input_sz + M * self.num_read_heads
-		self.lstm = nn.LSTM(input_size=self.ctrlr_input_sz, hidden_size=ctrlr_sz, num_layers=ctrlr_layers)
+		self.rnn = nn.GRU(input_size=self.ctrlr_input_sz, hidden_size=ctrlr_sz, num_layers=ctrlr_layers)
 
 		# the hidden variable will be optimized by optimizer
 		self.lstm_h_bias = nn.Parameter(torch.randn(ctrlr_layers, 1, ctrlr_sz) * 0.05)
-		self.lstm_c_bias = nn.Parameter(torch.randn(ctrlr_layers, 1, ctrlr_sz) * 0.05)
+		# self.lstm_c_bias = nn.Parameter(torch.randn(ctrlr_layers, 1, ctrlr_sz) * 0.05)
 
 		# output of controller to output of NTM
 		# [128 + head_num*20] => [8]
@@ -69,18 +70,18 @@ class Ctrlr(nn.Module):
 		# initial LSTM hidden variable
 		# [layers, b, ctrlr_sz], This initial value will be optimized
 		lstm_h = self.lstm_h_bias.clone().repeat(1, batchsz, 1)
-		lstm_c = self.lstm_c_bias.clone().repeat(1, batchsz, 1)
+		# lstm_c = self.lstm_c_bias.clone().repeat(1, batchsz, 1)
 		# initial address w variable: all set to 0
 		w_list = [head.new_w(batchsz) for head in self.heads]
 
-		return init_r, (lstm_h, lstm_c), w_list
+		return init_r, lstm_h, w_list
 
 	def reset_parameters(self):
 		# initialize O2O network
 		nn.init.xavier_uniform_(self.o2o.weight, gain=1)
 		nn.init.normal_(self.o2o.bias, std=0.01)
 		# initialize LSTM network
-		for p in self.lstm.parameters():
+		for p in self.rnn.parameters():
 			if p.dim() == 1:
 				nn.init.constant_(p, 0)
 			else:
@@ -103,7 +104,7 @@ class Ctrlr(nn.Module):
 
 		# 2. fed into controller and get address w
 		# [b, 29] + ([3, b, 128], [3, b,128]) => [b, 128] + ([3, b, 128], [3, b,128])
-		ctrlr_outp, ctrlr_state = self.lstm(inp.unsqueeze(0), prev_ctrlr_state)
+		ctrlr_outp, ctrlr_state = self.rnn(inp.unsqueeze(0), prev_ctrlr_state)
 		ctrlr_outp = ctrlr_outp.squeeze(0)
 
 		# 3. Read/Write of memory

@@ -30,6 +30,18 @@ class NTMCell(nn.Module):
 		self.N = N
 		self.M = M
 
+		# torch.Size([1, 1, 128])
+		# torch.Size([26, 128])
+		# torch.Size([26])
+		# torch.Size([66, 128])
+		# torch.Size([66])
+		# torch.Size([384, 29])
+		# torch.Size([384, 128])
+		# torch.Size([384])
+		# torch.Size([384])
+		# torch.Size([8, 148])
+		# torch.Size([8])
+
 		# initialize a memory buffer, used by Read/Write Heads.
 		memory = NTMMemory(N, M)
 
@@ -43,6 +55,8 @@ class NTMCell(nn.Module):
 
 		self.ctrlr = Ctrlr(input_sz, output_sz, N, M, ctrlr_sz, ctrlr_layers, heads)
 		self.memory = memory
+		self.prev_state = None
+		self.batchsz = None
 
 	def zero_state(self, batchsz):
 		"""
